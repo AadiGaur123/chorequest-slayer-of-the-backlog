@@ -23,6 +23,7 @@ export class DungeonScene extends Phaser.Scene {
     SPACE: Phaser.Input.Keyboard.Key;
     Q: Phaser.Input.Keyboard.Key;
     E: Phaser.Input.Keyboard.Key;
+    Z: Phaser.Input.Keyboard.Key;
   };
   private slashHitbox!: Phaser.Physics.Arcade.Sprite;
   private whirlwindSprite!: Phaser.GameObjects.Sprite;
@@ -129,6 +130,7 @@ export class DungeonScene extends Phaser.Scene {
         SPACE: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
         Q: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
         E: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
+        Z: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
       };
     }
 
@@ -177,6 +179,11 @@ export class DungeonScene extends Phaser.Scene {
     // Whirlwind Super trigger (Q or E)
     if (Phaser.Input.Keyboard.JustDown(this.keys.Q) || Phaser.Input.Keyboard.JustDown(this.keys.E)) {
       this.performWhirlwind();
+    }
+
+    // Safety Undo trigger (Z key)
+    if (Phaser.Input.Keyboard.JustDown(this.keys.Z)) {
+      useChoreStore.getState().undoLastAction();
     }
 
     // Keep whirlwind attached to player if active
@@ -320,7 +327,7 @@ export class DungeonScene extends Phaser.Scene {
       },
     });
 
-    useChoreStore.getState().slayChoreOptimistic(choreId);
+    useChoreStore.getState().initiateSlay(choreId);
   }
 
   private syncEnemiesWithStore(chores: ChoreItem[]): void {
@@ -332,7 +339,7 @@ export class DungeonScene extends Phaser.Scene {
     this.enemiesGroup.getChildren().forEach((child) => {
       const enemy = child as EnemySprite;
       const chore = chores.find((c) => c.id === enemy.choreId);
-      if (!chore || chore.status === 'SLATED_FOR_DEATH' || chore.status === 'COMPLETED') {
+      if (!chore || chore.status === 'SLATED_FOR_DEATH' || chore.status === 'COMPLETED' || chore.status === 'PENDING_UNDO') {
         if (enemy.label) enemy.label.destroy();
         enemy.destroy();
       }
@@ -362,6 +369,10 @@ export class DungeonScene extends Phaser.Scene {
       enemy.aiTimer = 0;
       enemy.setCollideWorldBounds(true);
       enemy.setBounce(0.4);
+
+      if (chore.isVip) {
+        enemy.setTint(0xfacc15); // Golden shield tint
+      }
 
       const truncatedTitle = chore.title.length > 20 ? chore.title.slice(0, 18) + '..' : chore.title;
       enemy.label = this.add

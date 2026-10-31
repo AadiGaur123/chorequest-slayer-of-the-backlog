@@ -15,14 +15,18 @@ export class ChoreQueue {
   private processedHistory: Map<string, ActionExecutionResult> = new Map();
   private batchTimer: NodeJS.Timeout | null = null;
 
+  // Circuit Breaker: Track execution timestamps in rolling 5-minute window
+  private recentExecutionTimestamps: number[] = [];
+  private readonly MAX_ACTIONS_PER_WINDOW = 25;
+  private readonly WINDOW_DURATION_MS = 5 * 60 * 1000;
+
   constructor(
     private adapter: IChoreAdapter,
     private options = { batchWindowMs: 1200, maxRetries: 3 }
   ) {}
 
   /**
-   * Enqueues an action with idempotency protection.
-   * If the action has already been successfully executed, returns the cached result.
+   * Enqueues an action with idempotency and circuit-breaker protection.
    */
   public enqueue(userId: string, action: ActionPayload): Promise<ActionExecutionResult> {
     const key = `${userId}:${action.choreId}:${action.action}`;
@@ -30,6 +34,25 @@ export class ChoreQueue {
     if (cached && cached.success) {
       return Promise.resolve(cached);
     }
+
+    // Safety Circuit Breaker Check
+    const now = Date.now();
+    this.recentExecutionTimestamps = this.recentExecutionTimestamps.filter(
+      (ts) => now - ts < this.WINDOW_DURATION_MS
+    );
+
+    if (this.recentExecutionTimestamps.length >= this.MAX_ACTIONS_PER_WINDOW) {
+      const errResult: ActionExecutionResult = {
+        choreId: action.choreId,
+        success: false,
+        message: `🛡️ CIRCUIT BREAKER: Safety cap reached (${this.MAX_ACTIONS_PER_WINDOW} actions / 5 min). Cool-down in progress.`,
+        timestamp: now,
+      };
+      this.processedHistory.set(key, errResult);
+      return Promise.resolve(errResult);
+    }
+
+    this.recentExecutionTimestamps.push(now);
 
     return new Promise((resolve) => {
       this.queue.push({
@@ -40,7 +63,6 @@ export class ChoreQueue {
         addedAt: Date.now(),
       });
 
-      // Debounce trigger to allow combo kills to accumulate into a single batch
       if (this.batchTimer) {
         clearTimeout(this.batchTimer);
       }
@@ -51,7 +73,6 @@ export class ChoreQueue {
         });
       }, this.options.batchWindowMs);
 
-      // Simple listener for task resolution
       const checkInterval = setInterval(() => {
         const result = this.processedHistory.get(key);
         if (result) {
@@ -68,8 +89,6 @@ export class ChoreQueue {
     this.processing = true;
     const currentBatch = [...this.queue];
     this.queue = [];
-
-    console.log(`[ChoreQueue] Processing batch of ${currentBatch.length} chore actions...`);
 
     const actions = currentBatch.map((task) => task.action);
     const userId = currentBatch[0]?.userId || 'anonymous-hero';
@@ -89,17 +108,13 @@ export class ChoreQueue {
         if (res.success) {
           this.processedHistory.set(task.id, res);
         } else if (task.retries < this.options.maxRetries) {
-          console.warn(`[ChoreQueue] Retrying task ${task.id} (Attempt ${task.retries + 1})...`);
           task.retries++;
           this.queue.push(task);
         } else {
-          console.error(`[ChoreQueue] Task ${task.id} exceeded max retries. Marking failed.`);
           this.processedHistory.set(task.id, res);
         }
       }
     } catch (err) {
-      console.error('[ChoreQueue] Batch execution encountered fatal error:', err);
-      // Requeue with backoff
       for (const task of currentBatch) {
         if (task.retries < this.options.maxRetries) {
           task.retries++;
@@ -121,7 +136,13 @@ export class ChoreQueue {
     }
   }
 
-  public getHistory(key: string): ActionExecutionResult | undefined {
-    return this.processedHistory.get(key);
+  public getCircuitBreakerStatus(): { current: number; max: number; isTripped: boolean } {
+    const now = Date.now();
+    const active = this.recentExecutionTimestamps.filter((ts) => now - ts < this.WINDOW_DURATION_MS).length;
+    return {
+      current: active,
+      max: this.MAX_ACTIONS_PER_WINDOW,
+      isTripped: active >= this.MAX_ACTIONS_PER_WINDOW,
+    };
   }
 }

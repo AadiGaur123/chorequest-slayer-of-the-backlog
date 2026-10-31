@@ -1,15 +1,16 @@
 import React, { useEffect } from 'react';
 import { useChoreStore } from '../store/choreStore.js';
-import { Terminal, CheckCircle2, Zap, Flame, RotateCcw } from 'lucide-react';
+import { Terminal, CheckCircle2, Zap, Flame, RotateCcw, ShieldAlert, Download } from 'lucide-react';
 
 export const TacticalConsole: React.FC = () => {
   const {
     chores,
     selectedChoreId,
     selectChore,
-    slayChoreOptimistic,
+    initiateSlay,
     slayAllBatchOptimistic,
     respawnChores,
+    exportAuditLog,
     logs,
   } = useChoreStore();
 
@@ -33,7 +34,7 @@ export const TacticalConsole: React.FC = () => {
         selectChore(activeChores[prevIndex]?.id || null);
       } else if (e.key === 'Enter' && selectedChoreId) {
         e.preventDefault();
-        slayChoreOptimistic(selectedChoreId);
+        initiateSlay(selectedChoreId);
       } else if (e.key === 'r' && activeChores.length === 0) {
         e.preventDefault();
         respawnChores();
@@ -42,7 +43,7 @@ export const TacticalConsole: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeChores, selectedChoreId, selectChore, slayChoreOptimistic, respawnChores]);
+  }, [activeChores, selectedChoreId, selectChore, initiateSlay, respawnChores]);
 
   return (
     <aside
@@ -193,13 +194,15 @@ export const TacticalConsole: React.FC = () => {
                 onClick={() => selectChore(chore.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
-                    slayChoreOptimistic(chore.id);
+                    initiateSlay(chore.id);
                   }
                 }}
                 style={{
                   backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-secondary)',
                   border: isSelected
                     ? '2px solid var(--accent-blue)'
+                    : chore.isVip
+                    ? '2px solid var(--accent-gold)'
                     : '1px solid var(--border-color)',
                   borderRadius: '6px',
                   padding: '10px 12px',
@@ -208,23 +211,44 @@ export const TacticalConsole: React.FC = () => {
                   gap: '4px',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
+                  position: 'relative',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      color:
-                        chore.enemyType === 'SPAM_SLIME'
-                          ? 'var(--accent-green)'
-                          : chore.enemyType === 'LINT_BANSHEE'
-                          ? 'var(--accent-purple)'
-                          : 'var(--accent-gold)',
-                    }}
-                  >
-                    [{chore.enemyType}]
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        color:
+                          chore.enemyType === 'SPAM_SLIME'
+                            ? 'var(--accent-green)'
+                            : chore.enemyType === 'LINT_BANSHEE'
+                            ? 'var(--accent-purple)'
+                            : 'var(--accent-gold)',
+                      }}
+                    >
+                      [{chore.enemyType}]
+                    </span>
+                    {chore.isVip && (
+                      <span
+                        style={{
+                          backgroundColor: 'rgba(244, 180, 26, 0.2)',
+                          color: 'var(--accent-gold)',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        <ShieldAlert size={10} />
+                        VIP WARD
+                      </span>
+                    )}
+                  </div>
                   <span style={{ fontSize: '11px', color: 'var(--accent-gold)' }}>
                     +{chore.xpReward} XP
                   </span>
@@ -246,12 +270,12 @@ export const TacticalConsole: React.FC = () => {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      slayChoreOptimistic(chore.id);
+                      initiateSlay(chore.id);
                     }}
                     aria-label={`Execute chore: ${chore.title}`}
                     style={{
-                      backgroundColor: 'var(--accent-red)',
-                      color: '#ffffff',
+                      backgroundColor: chore.isVip ? 'var(--accent-gold)' : 'var(--accent-red)',
+                      color: chore.isVip ? '#000' : '#ffffff',
                       padding: '4px 10px',
                       borderRadius: '4px',
                       fontSize: '11px',
@@ -262,7 +286,7 @@ export const TacticalConsole: React.FC = () => {
                     }}
                   >
                     <Zap size={12} />
-                    Execute
+                    {chore.isVip ? 'Verify & Slay' : 'Execute'}
                   </button>
                 </div>
               </div>
@@ -271,7 +295,7 @@ export const TacticalConsole: React.FC = () => {
         )}
       </div>
 
-      {/* Real-time Combat & Background Sync Logs */}
+      {/* Safety Audit Ledger & Execution Log */}
       <div
         style={{
           marginTop: '16px',
@@ -279,9 +303,37 @@ export const TacticalConsole: React.FC = () => {
           paddingTop: '12px',
         }}
       >
-        <h4 style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '8px' }}>
-          EXECUTION LOG & AUDIT TRAIL
-        </h4>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '8px',
+          }}
+        >
+          <h4 style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+            SAFETY AUDIT LOG & TELEMETRY
+          </h4>
+          <button
+            onClick={exportAuditLog}
+            title="Download complete safety audit ledger as JSON"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'var(--accent-blue)',
+              border: 'none',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 6px',
+              cursor: 'pointer',
+            }}
+          >
+            <Download size={12} />
+            <span>Export JSON</span>
+          </button>
+        </div>
+
         <div
           role="log"
           aria-live="polite"
@@ -300,7 +352,16 @@ export const TacticalConsole: React.FC = () => {
           }}
         >
           {logs.map((log, index) => (
-            <div key={index} style={{ color: log.includes('⚠️') ? 'var(--accent-red)' : '#93c5fd' }}>
+            <div
+              key={index}
+              style={{
+                color: log.includes('⚠️')
+                  ? 'var(--accent-red)'
+                  : log.includes('🛡️') || log.includes('↩️')
+                  ? 'var(--accent-gold)'
+                  : '#93c5fd',
+              }}
+            >
               {log}
             </div>
           ))}

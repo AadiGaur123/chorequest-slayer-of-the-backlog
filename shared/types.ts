@@ -14,11 +14,12 @@ export interface ChoreItem {
   type: ChoreType;
   enemyType: EnemyType;
   title: string;
-  source: string; // e.g. "noreply@spam-newsletter.com" or "src/auth/token.ts"
+  source: string;
   snippet: string;
   estimatedEffortSeconds: number;
   xpReward: number;
-  status: 'ACTIVE' | 'SLATED_FOR_DEATH' | 'COMPLETED' | 'FAILED';
+  status: 'ACTIVE' | 'PENDING_UNDO' | 'SLATED_FOR_DEATH' | 'COMPLETED' | 'FAILED';
+  isVip?: boolean; // Safety Ward: Critical / VIP item requiring confirmation
   metadata?: Record<string, unknown>;
   createdAt: string;
 }
@@ -36,6 +37,7 @@ export interface ActionPayload {
   choreId: string;
   action: ChoreType;
   clientTimestamp: number;
+  confirmed?: boolean;
 }
 
 export interface BatchActionPayload {
@@ -54,4 +56,14 @@ export interface BatchExecutionResponse {
   results: ActionExecutionResult[];
   processedCount: number;
   failedCount: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  choreId: string;
+  action: ChoreType;
+  title: string;
+  timestamp: string;
+  status: 'PENDING_UNDO' | 'COMMITTED' | 'UNDONE' | 'FAILED';
+  details: string;
 }

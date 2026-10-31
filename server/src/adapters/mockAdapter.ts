@@ -6,7 +6,7 @@ export class MockAdapter implements IChoreAdapter {
   private batchCounter = 1;
   private mockChores: ChoreItem[] = [];
 
-  constructor() {
+  constructor(private latencyMs = 20) {
     this.mockChores = this.generateSampleChores();
   }
 
@@ -23,6 +23,7 @@ export class MockAdapter implements IChoreAdapter {
         estimatedEffortSeconds: 5,
         xpReward: 25,
         status: 'ACTIVE',
+        isVip: false,
         createdAt: new Date().toISOString(),
       },
       {
@@ -35,18 +36,20 @@ export class MockAdapter implements IChoreAdapter {
         estimatedEffortSeconds: 5,
         xpReward: 25,
         status: 'ACTIVE',
+        isVip: false,
         createdAt: new Date().toISOString(),
       },
       {
         id: `mock-mail-${b}-03`,
         type: 'EMAIL_TRASH',
         enemyType: 'SPAM_SLIME',
-        title: 'Reminder: Webinar starting in 15 minutes',
-        source: 'webinar-host@growthhacks.biz',
-        snippet: 'Learn how to 10x your productivity with this one weird trick...',
-        estimatedEffortSeconds: 10,
-        xpReward: 30,
+        title: 'CRITICAL: Board of Directors Meeting Notes & Audit',
+        source: 'ceo@enterprise-holdings.corp',
+        snippet: 'Confidential company meeting minutes. DO NOT DISCARD.',
+        estimatedEffortSeconds: 15,
+        xpReward: 100,
         status: 'ACTIVE',
+        isVip: true, // VIP Safety Ward item!
         createdAt: new Date().toISOString(),
       },
       {
@@ -59,6 +62,7 @@ export class MockAdapter implements IChoreAdapter {
         estimatedEffortSeconds: 30,
         xpReward: 60,
         status: 'ACTIVE',
+        isVip: false,
         createdAt: new Date().toISOString(),
       },
       {
@@ -71,6 +75,7 @@ export class MockAdapter implements IChoreAdapter {
         estimatedEffortSeconds: 15,
         xpReward: 40,
         status: 'ACTIVE',
+        isVip: false,
         createdAt: new Date().toISOString(),
       },
       {
@@ -83,6 +88,7 @@ export class MockAdapter implements IChoreAdapter {
         estimatedEffortSeconds: 20,
         xpReward: 50,
         status: 'ACTIVE',
+        isVip: false,
         createdAt: new Date().toISOString(),
       },
       {
@@ -95,6 +101,7 @@ export class MockAdapter implements IChoreAdapter {
         estimatedEffortSeconds: 25,
         xpReward: 55,
         status: 'ACTIVE',
+        isVip: false,
         createdAt: new Date().toISOString(),
       },
     ];
@@ -111,14 +118,34 @@ export class MockAdapter implements IChoreAdapter {
   }
 
   async executeAction(_userId: string, action: ActionPayload): Promise<ActionExecutionResult> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (this.latencyMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
+    }
 
-    const chore = this.mockChores.find((c) => c.id === action.choreId);
+    let chore = this.mockChores.find((c) => c.id === action.choreId);
     if (!chore) {
+      // Dynamic fallback for generated test IDs
+      chore = {
+        id: action.choreId,
+        type: action.action,
+        enemyType: 'SPAM_SLIME',
+        title: `Dynamic Item: ${action.choreId}`,
+        source: 'system',
+        snippet: '',
+        estimatedEffortSeconds: 5,
+        xpReward: 20,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+      };
+      this.mockChores.push(chore);
+    }
+
+    // Safety Check: If it is a VIP chore and wasn't explicitly confirmed, abort!
+    if (chore.isVip && !action.confirmed) {
       return {
         choreId: action.choreId,
         success: false,
-        message: 'Chore item not found or already deleted',
+        message: 'SAFETY ABORT: Attempted to execute VIP item without user confirmation.',
         timestamp: Date.now(),
       };
     }
@@ -135,12 +162,6 @@ export class MockAdapter implements IChoreAdapter {
   }
 
   async executeBatch(userId: string, actions: ActionPayload[]): Promise<ActionExecutionResult[]> {
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    const results: ActionExecutionResult[] = [];
-    for (const action of actions) {
-      const res = await this.executeAction(userId, action);
-      results.push(res);
-    }
-    return results;
+    return Promise.all(actions.map((action) => this.executeAction(userId, action)));
   }
 }
