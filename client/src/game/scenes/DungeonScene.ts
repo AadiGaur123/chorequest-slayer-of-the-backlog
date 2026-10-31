@@ -318,8 +318,9 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   /**
-   * Territorial AI: Enemies patrol within their specific sector.
-   * If player comes close, they engage. If player leaves, they disengage!
+   * Territorial AI: Enemies never follow or chase the player!
+   * - Far away: gentle idle pacing in a tight circle around home post.
+   * - Player nearby ("sees player"): rounds in a wider, alerted circle around home post.
    */
   private updateTerritorialEnemyAI(time: number): void {
     this.enemiesGroup.getChildren().forEach((child) => {
@@ -327,20 +328,24 @@ export class DungeonScene extends Phaser.Scene {
       if (!enemy.active || !enemy.body) return;
 
       const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
-      const distToHome = Phaser.Math.Distance.Between(enemy.x, enemy.y, enemy.homeX, enemy.homeY);
 
-      // Aggro range: 140px. Leash range from home waypoint: 240px.
-      if (distToPlayer < 140 && distToHome < 260) {
-        // Engaged: pursue player at walking speed
-        const speed = enemy.isVip ? 70 : 50;
-        this.physics.moveToObject(enemy, this.player, speed);
-      } else if (distToHome > 40) {
-        // Disengaged: return home to their designated zone waypoint
-        this.physics.moveTo(enemy, enemy.homeX, enemy.homeY, 40);
+      // Alert check: when player is within 160px, enemy notices and rounds in a wider circle
+      const isAlert = distToPlayer < 160;
+      const angularSpeed = isAlert ? 0.0028 : 0.0012;
+      const orbitRadius = isAlert ? (enemy.isVip ? 28 : 55) : 18;
+      const moveSpeed = isAlert ? (enemy.isVip ? 32 : 48) : 18;
+
+      // Compute target point on the circular patrol path around home waypoint
+      const angle = time * angularSpeed + enemy.homeX * 0.02;
+      const targetX = enemy.homeX + Math.cos(angle) * orbitRadius;
+      const targetY = enemy.homeY + Math.sin(angle) * orbitRadius;
+
+      // Move toward orbit point (NEVER towards the player!)
+      const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, targetX, targetY);
+      if (distToTarget > 6) {
+        this.physics.moveTo(enemy, targetX, targetY, moveSpeed);
       } else {
-        // Idling: gently pace around home waypoint
-        const patrolAngle = time * 0.0015 + enemy.homeX;
-        enemy.setVelocity(Math.cos(patrolAngle) * 15, Math.sin(patrolAngle) * 15);
+        enemy.setVelocity(0, 0);
       }
 
       // Update nameplate position
