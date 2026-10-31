@@ -13,10 +13,11 @@ export class MockAdapter implements IChoreAdapter {
   private generateSampleChores(): ChoreItem[] {
     const b = this.batchCounter++;
     return [
+      // 1. THE OVERGROWN INBOX (Email Sector)
       {
         id: `mock-mail-${b}-01`,
         type: 'EMAIL_TRASH',
-        enemyType: 'SPAM_SLIME',
+        enemyType: 'SPAM_GOBLIN',
         title: '70% OFF Limited Time Flash Sale!',
         source: 'deals@spam-marketing-weekly.com',
         snippet: 'Don’t miss our mega clearance sale on stuff you don’t need...',
@@ -24,12 +25,13 @@ export class MockAdapter implements IChoreAdapter {
         xpReward: 25,
         status: 'ACTIVE',
         isVip: false,
+        zone: 'INBOX_CITADEL',
         createdAt: new Date().toISOString(),
       },
       {
         id: `mock-mail-${b}-02`,
         type: 'EMAIL_TRASH',
-        enemyType: 'SPAM_SLIME',
+        enemyType: 'SPAM_GOBLIN',
         title: 'Your subscription receipt #94829',
         source: 'updates@streaming-service.net',
         snippet: 'Your recurring monthly charge of $14.99 has been processed...',
@@ -37,25 +39,30 @@ export class MockAdapter implements IChoreAdapter {
         xpReward: 25,
         status: 'ACTIVE',
         isVip: false,
+        zone: 'INBOX_CITADEL',
         createdAt: new Date().toISOString(),
       },
+      // THE BOSS (Man in a Suit - Critical VIP item)
       {
         id: `mock-mail-${b}-03`,
         type: 'EMAIL_TRASH',
-        enemyType: 'SPAM_SLIME',
-        title: 'CRITICAL: Board of Directors Meeting Notes & Audit',
+        enemyType: 'BOSS_EXEC',
+        title: 'CRITICAL: Board Meeting & Executive Directives',
         source: 'ceo@enterprise-holdings.corp',
-        snippet: 'Confidential company meeting minutes. DO NOT DISCARD.',
-        estimatedEffortSeconds: 15,
-        xpReward: 100,
+        snippet: 'Confidential corporate strategy. Do not delete without sign-off.',
+        estimatedEffortSeconds: 20,
+        xpReward: 120,
         status: 'ACTIVE',
-        isVip: true, // VIP Safety Ward item!
+        isVip: true, // Triggers VIP Safety Confirmation Ward
+        zone: 'INBOX_CITADEL',
         createdAt: new Date().toISOString(),
       },
+
+      // 2. THE SYNTAX SANCTUM (Code & Lint Sector)
       {
         id: `mock-lint-${b}-01`,
         type: 'LINT_FIX',
-        enemyType: 'LINT_BANSHEE',
+        enemyType: 'SYNTAX_SKELETON',
         title: 'Missing return type on public method `authenticateUser`',
         source: 'src/auth/jwtService.ts:42',
         snippet: '@typescript-eslint/explicit-function-return-type warning',
@@ -63,12 +70,13 @@ export class MockAdapter implements IChoreAdapter {
         xpReward: 60,
         status: 'ACTIVE',
         isVip: false,
+        zone: 'CODE_CATACOMBS',
         createdAt: new Date().toISOString(),
       },
       {
         id: `mock-lint-${b}-02`,
         type: 'LINT_FIX',
-        enemyType: 'LINT_BANSHEE',
+        enemyType: 'SYNTAX_SKELETON',
         title: 'Unused import `formatDistanceToNow`',
         source: 'src/utils/dateFormatter.ts:3',
         snippet: 'no-unused-vars: variable declared but never read',
@@ -76,12 +84,15 @@ export class MockAdapter implements IChoreAdapter {
         xpReward: 40,
         status: 'ACTIVE',
         isVip: false,
+        zone: 'CODE_CATACOMBS',
         createdAt: new Date().toISOString(),
       },
+
+      // 3. THE TREASURY PLAZA (Expense & Receipt Sector)
       {
         id: `mock-expense-${b}-01`,
         type: 'EXPENSE_CATEGORIZE',
-        enemyType: 'RECEIPT_MIMIC',
+        enemyType: 'TAX_TROLL',
         title: 'Blue Bottle Coffee - $6.75',
         source: 'Receipt #BB-9021',
         snippet: 'Uncategorized transaction: Needs tax classification',
@@ -89,12 +100,13 @@ export class MockAdapter implements IChoreAdapter {
         xpReward: 50,
         status: 'ACTIVE',
         isVip: false,
+        zone: 'TREASURY_VAULT',
         createdAt: new Date().toISOString(),
       },
       {
         id: `mock-expense-${b}-02`,
         type: 'EXPENSE_CATEGORIZE',
-        enemyType: 'RECEIPT_MIMIC',
+        enemyType: 'TAX_TROLL',
         title: 'AWS Cloud Hosting - $142.10',
         source: 'Invoice #INV-2026-10-88',
         snippet: 'Uncategorized transaction: Infrastructure Expense',
@@ -102,6 +114,7 @@ export class MockAdapter implements IChoreAdapter {
         xpReward: 55,
         status: 'ACTIVE',
         isVip: false,
+        zone: 'TREASURY_VAULT',
         createdAt: new Date().toISOString(),
       },
     ];
@@ -124,11 +137,10 @@ export class MockAdapter implements IChoreAdapter {
 
     let chore = this.mockChores.find((c) => c.id === action.choreId);
     if (!chore) {
-      // Dynamic fallback for generated test IDs
       chore = {
         id: action.choreId,
         type: action.action,
-        enemyType: 'SPAM_SLIME',
+        enemyType: 'SPAM_GOBLIN',
         title: `Dynamic Item: ${action.choreId}`,
         source: 'system',
         snippet: '',

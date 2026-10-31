@@ -5,7 +5,15 @@
 
 export type ChoreType = 'EMAIL_TRASH' | 'EMAIL_ARCHIVE' | 'LINT_FIX' | 'EXPENSE_CATEGORIZE';
 
-export type EnemyType = 'SPAM_SLIME' | 'LINT_BANSHEE' | 'RECEIPT_MIMIC';
+export type EnemyType =
+  | 'SPAM_GOBLIN'
+  | 'SYNTAX_SKELETON'
+  | 'TAX_TROLL'
+  | 'BOSS_EXEC'
+  // Legacy aliases
+  | 'SPAM_SLIME'
+  | 'LINT_BANSHEE'
+  | 'RECEIPT_MIMIC';
 
 export type SyncState = 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR' | 'RETRYING';
 
@@ -20,6 +28,7 @@ export interface ChoreItem {
   xpReward: number;
   status: 'ACTIVE' | 'PENDING_UNDO' | 'SLATED_FOR_DEATH' | 'COMPLETED' | 'FAILED';
   isVip?: boolean; // Safety Ward: Critical / VIP item requiring confirmation
+  zone?: 'INBOX_CITADEL' | 'CODE_CATACOMBS' | 'TREASURY_VAULT';
   metadata?: Record<string, unknown>;
   createdAt: string;
 }

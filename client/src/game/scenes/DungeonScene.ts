@@ -6,9 +6,12 @@ import { sound } from '../audio/soundSynth.js';
 interface EnemySprite extends Phaser.Physics.Arcade.Sprite {
   choreId: string;
   choreType: string;
+  isVip?: boolean;
   label: Phaser.GameObjects.Text;
-  initialX: number;
-  initialY: number;
+  vipLabel?: Phaser.GameObjects.Text;
+  homeX: number;
+  homeY: number;
+  patrolRadius: number;
   aiTimer: number;
 }
 
@@ -29,46 +32,39 @@ export class DungeonScene extends Phaser.Scene {
   private whirlwindSprite!: Phaser.GameObjects.Sprite;
   private enemiesGroup!: Phaser.Physics.Arcade.Group;
   private particles!: Phaser.GameObjects.Particles.ParticleEmitter;
-  private fireParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
-  private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private dustParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private obstaclesGroup!: Phaser.Physics.Arcade.StaticGroup;
   private isSlashing = false;
   private isWhirlwinding = false;
   private lastFacingAngle = 0;
+
+  // World map bounds (Zelda/Pokémon Open World: 1920 x 1280)
+  private readonly MAP_WIDTH = 1920;
+  private readonly MAP_HEIGHT = 1280;
+
+  // Biome HUD Text
+  private locationText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'DungeonScene' });
   }
 
   create(): void {
-    const { width, height } = this.scale;
+    const W = this.MAP_WIDTH;
+    const H = this.MAP_HEIGHT;
 
-    // 1. Tilemap floor grid
-    this.add.tileSprite(width / 2, height / 2, width, height, 'dungeon-tile');
+    // 1. World & Physics Bounds
+    this.physics.world.setBounds(0, 0, W, H);
+    this.cameras.main.setBounds(0, 0, W, H);
 
-    // 2. Perimeter Stone Walls
-    this.walls = this.physics.add.staticGroup();
-    const tileSize = 32;
-    for (let x = 0; x < width; x += tileSize) {
-      this.walls.create(x + 16, 16, 'dungeon-wall');
-      this.walls.create(x + 16, height - 16, 'dungeon-wall');
-    }
-    for (let y = tileSize; y < height - tileSize; y += tileSize) {
-      this.walls.create(16, y + 16, 'dungeon-wall');
-      this.walls.create(width - 16, y + 16, 'dungeon-wall');
-    }
+    // 2. Build Open World Terrain & Zones
+    this.buildWorldTerrain(W, H);
 
-    // 3. Torches with ambient flicker in room corners
-    const torchPositions = [
-      { x: 48, y: 48 },
-      { x: width - 48, y: 48 },
-      { x: 48, y: height - 48 },
-      { x: width - 48, y: height - 48 },
-    ];
-    torchPositions.forEach((pos) => {
-      this.add.image(pos.x, pos.y, 'torch');
-    });
+    // 3. Static Obstacles Group (Buildings, Trees, Walls)
+    this.obstaclesGroup = this.physics.add.staticGroup();
+    this.buildWorldObstacles();
 
-    // 4. Spark Particle Emitter for hits
+    // 4. Particle Emitters
     this.particles = this.add.particles(0, 0, 'particle-spark', {
       lifespan: 450,
       speed: { min: 90, max: 240 },
@@ -76,25 +72,24 @@ export class DungeonScene extends Phaser.Scene {
       emitting: false,
     });
 
-    // 5. Fire Particles for torches
-    this.fireParticles = this.add.particles(0, 0, 'particle-spark', {
-      lifespan: 300,
-      speed: { min: 10, max: 40 },
-      angle: { min: 250, max: 290 },
-      scale: { start: 0.8, end: 0 },
-      frequency: 120,
-    });
-    torchPositions.forEach((p) => {
-      this.fireParticles.emitParticleAt(p.x, p.y - 6);
+    this.dustParticles = this.add.particles(0, 0, 'particle-spark', {
+      lifespan: 200,
+      speed: { min: 10, max: 30 },
+      scale: { start: 0.6, end: 0 },
+      emitting: false,
     });
 
-    // 6. Create Player Sprite
-    this.player = this.physics.add.sprite(width / 2, height / 2, 'hero');
+    // 5. Spawn Player at Central Crossroads (x: 960, y: 640)
+    this.player = this.physics.add.sprite(960, 640, 'hero');
     this.player.setCollideWorldBounds(true);
     this.player.setSize(20, 24);
-    this.physics.add.collider(this.player, this.walls);
+    this.physics.add.collider(this.player, this.obstaclesGroup);
 
-    // 7. Create Slash & Whirlwind Hitboxes
+    // Smooth Zelda/Pokémon Camera Follow with deadzone
+    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+    this.cameras.main.setZoom(1.0);
+
+    // 6. Slash Hitbox & Whirlwind Sprite
     this.slashHitbox = this.physics.add.sprite(0, 0, 'slash-arc');
     this.slashHitbox.setVisible(false);
     this.physics.add.existing(this.slashHitbox);
@@ -105,12 +100,12 @@ export class DungeonScene extends Phaser.Scene {
     this.whirlwindSprite = this.add.sprite(0, 0, 'whirlwind-circle');
     this.whirlwindSprite.setVisible(false);
 
-    // 8. Enemies Group with Wall Collisions
+    // 7. Enemies Group
     this.enemiesGroup = this.physics.add.group();
-    this.physics.add.collider(this.enemiesGroup, this.walls);
+    this.physics.add.collider(this.enemiesGroup, this.obstaclesGroup);
     this.physics.add.collider(this.player, this.enemiesGroup);
 
-    // 9. Overlap collision: Sword hits enemy
+    // Sword Hit Detection
     this.physics.add.overlap(
       this.slashHitbox,
       this.enemiesGroup,
@@ -119,7 +114,20 @@ export class DungeonScene extends Phaser.Scene {
       this
     );
 
-    // 10. Controls setup
+    // 8. Fixed Viewport Biome HUD Banner
+    this.locationText = this.add
+      .text(16, 480, '📍 Central Crossroads', {
+        fontFamily: 'Inter, sans-serif',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#facc15',
+        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+        padding: { x: 8, y: 4 },
+      })
+      .setScrollFactor(0)
+      .setDepth(100);
+
+    // 9. Keyboard Controls
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.keys = {
@@ -142,7 +150,7 @@ export class DungeonScene extends Phaser.Scene {
       }
     });
 
-    // 11. Store subscription
+    // 10. Store Subscription
     useChoreStore.subscribe((state) => {
       this.syncEnemiesWithStore(state.chores);
     });
@@ -153,8 +161,8 @@ export class DungeonScene extends Phaser.Scene {
   update(time: number): void {
     if (!this.player || !this.player.body) return;
 
-    // Movement Loop
-    const speed = 200;
+    // Movement (WASD + Arrows)
+    const speed = 210;
     let vx = 0;
     let vy = 0;
 
@@ -167,75 +175,203 @@ export class DungeonScene extends Phaser.Scene {
     if (len > 0) {
       this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
       this.lastFacingAngle = Math.atan2(vy, vx);
+
+      // Footstep dust
+      if (Phaser.Math.Between(0, 5) === 0) {
+        this.dustParticles.emitParticleAt(this.player.x, this.player.y + 12, 1);
+      }
     } else {
       this.player.setVelocity(0, 0);
     }
 
-    // Slash trigger
+    // Slash
     if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) {
       this.performSlash();
     }
 
-    // Whirlwind Super trigger (Q or E)
+    // Whirlwind Purge
     if (Phaser.Input.Keyboard.JustDown(this.keys.Q) || Phaser.Input.Keyboard.JustDown(this.keys.E)) {
       this.performWhirlwind();
     }
 
-    // Safety Undo trigger (Z key)
+    // Undo Grace (Z)
     if (Phaser.Input.Keyboard.JustDown(this.keys.Z)) {
       useChoreStore.getState().undoLastAction();
     }
 
-    // Keep whirlwind attached to player if active
     if (this.isWhirlwinding) {
       this.whirlwindSprite.setPosition(this.player.x, this.player.y);
       this.whirlwindSprite.rotation += 0.25;
     }
 
-    // Enemy AI Behaviors
+    // Update Current Location HUD
+    this.updateLocationHUD();
+
+    // Territorial Enemy AI (Only move in their dedicated sector, disengage if pulled away)
+    this.updateTerritorialEnemyAI(time);
+  }
+
+  /**
+   * Builds distinct overworld zones with cobblestone paths, trees, and plazas
+   */
+  private buildWorldTerrain(W: number, H: number): void {
+    // Base Green Grass over the whole world
+    this.add.tileSprite(W / 2, H / 2, W, H, 'tile-grass');
+
+    // Northwest Sector: The Overgrown Inbox (Lush Grassland)
+    // Already grass
+
+    // Northeast Sector: The Syntax Sanctum (Dark Catacombs Floor)
+    this.add.tileSprite(1480, 320, 780, 540, 'tile-catacomb');
+
+    // South Sector: The Treasury Plaza (Warm Stone Vaults)
+    this.add.tileSprite(960, 980, 1100, 480, 'tile-treasury');
+
+    // Cobblestone Main Arterial Pathways connecting all 3 sectors
+    // East-West highway
+    this.add.tileSprite(W / 2, 640, W - 160, 64, 'tile-path');
+    // North-South avenue
+    this.add.tileSprite(960, H / 2, 64, H - 120, 'tile-path');
+
+    // Central Town Square Plaza
+    this.add.tileSprite(960, 640, 192, 192, 'tile-path');
+    this.add.image(960, 640, 'prop-fountain');
+
+    // Decorative ponds/water
+    this.add.tileSprite(240, 560, 128, 80, 'tile-water');
+    this.add.tileSprite(1680, 560, 128, 80, 'tile-water');
+  }
+
+  /**
+   * Places buildings, perimeter trees, hedges, and signposts with physics collision
+   */
+  private buildWorldObstacles(): void {
+    const W = this.MAP_WIDTH;
+    const H = this.MAP_HEIGHT;
+
+    // 1. World Perimeter Trees (Forest Border)
+    for (let x = 24; x < W; x += 48) {
+      this.obstaclesGroup.create(x, 24, 'prop-tree');
+      this.obstaclesGroup.create(x, H - 24, 'prop-tree');
+    }
+    for (let y = 64; y < H - 64; y += 48) {
+      this.obstaclesGroup.create(24, y, 'prop-tree');
+      this.obstaclesGroup.create(W - 24, y, 'prop-tree');
+    }
+
+    // 2. Sector Buildings
+    // Northwest: Mail Depot / Inbox Citadel
+    const mailBldg = this.obstaclesGroup.create(440, 160, 'building-mail');
+    mailBldg.setSize(76, 56);
+    this.add.text(440, 100, 'THE INBOX DEPOT', {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '11px',
+      color: '#fde047',
+      backgroundColor: '#0f172a',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5);
+
+    // Northeast: Terminal Archive / Syntax Sanctum
+    const termBldg = this.obstaclesGroup.create(1480, 160, 'building-terminal');
+    termBldg.setSize(76, 56);
+    this.add.text(1480, 100, 'SYNTAX ARCHIVE', {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '11px',
+      color: '#a855f7',
+      backgroundColor: '#0f172a',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5);
+
+    // South: Treasury Vault / Expense Market
+    const bankBldg = this.obstaclesGroup.create(960, 840, 'building-bank');
+    bankBldg.setSize(76, 56);
+    this.add.text(960, 780, 'TREASURY VAULT', {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '11px',
+      color: '#facc15',
+      backgroundColor: '#0f172a',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5);
+
+    // 3. Directional Signposts at Central Crossroad
+    this.obstaclesGroup.create(840, 600, 'prop-sign');
+    this.add.text(840, 576, '⬅️ INBOX', { fontSize: '10px', color: '#ffffff' }).setOrigin(0.5);
+
+    this.obstaclesGroup.create(1080, 600, 'prop-sign');
+    this.add.text(1080, 576, 'SYNTAX ➡️', { fontSize: '10px', color: '#ffffff' }).setOrigin(0.5);
+
+    this.obstaclesGroup.create(960, 750, 'prop-sign');
+    this.add.text(960, 726, '⬇️ TREASURY', { fontSize: '10px', color: '#ffffff' }).setOrigin(0.5);
+
+    // 4. Hedges & Trees dividing sectors
+    const hedgeCoords = [
+      // Left sector hedges
+      { x: 300, y: 320 }, { x: 580, y: 320 }, { x: 740, y: 240 }, { x: 740, y: 440 },
+      // Right sector ruined stone walls
+      { x: 1200, y: 260 }, { x: 1200, y: 400 }, { x: 1680, y: 260 }, { x: 1680, y: 400 },
+      // South sector pillars
+      { x: 680, y: 980 }, { x: 1240, y: 980 },
+    ];
+    hedgeCoords.forEach((c) => {
+      this.obstaclesGroup.create(c.x, c.y, c.x > 1000 && c.y < 600 ? 'prop-wall' : 'prop-bush');
+    });
+  }
+
+  /**
+   * Territorial AI: Enemies patrol within their specific sector.
+   * If player comes close, they engage. If player leaves, they disengage!
+   */
+  private updateTerritorialEnemyAI(time: number): void {
     this.enemiesGroup.getChildren().forEach((child) => {
       const enemy = child as EnemySprite;
       if (!enemy.active || !enemy.body) return;
 
-      const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+      const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+      const distToHome = Phaser.Math.Distance.Between(enemy.x, enemy.y, enemy.homeX, enemy.homeY);
 
-      if (enemy.choreType === 'EMAIL_TRASH') {
-        // Spam Slime: Aggro hops toward player if close
-        if (dist < 180) {
-          this.physics.moveToObject(enemy, this.player, 45);
-        } else {
-          // Gentle drift around initial spawn point
-          const driftAngle = time * 0.002 + enemy.initialX;
-          enemy.setVelocity(Math.cos(driftAngle) * 20, Math.sin(driftAngle) * 20);
-        }
-      } else if (enemy.choreType === 'LINT_BANSHEE') {
-        // Lint Banshee: Phasing glide
-        const floatY = Math.sin(time * 0.004 + enemy.initialX) * 35;
-        enemy.setVelocityY(floatY);
-        if (dist < 220) {
-          enemy.setVelocityX(this.player.x > enemy.x ? 30 : -30);
-        }
-      } else if (enemy.choreType === 'EXPENSE_CATEGORIZE') {
-        // Receipt Mimic: Stays still, then charges when close
-        if (dist < 130) {
-          this.physics.moveToObject(enemy, this.player, 80);
-        } else {
-          enemy.setVelocity(0, 0);
-        }
+      // Aggro range: 140px. Leash range from home waypoint: 240px.
+      if (distToPlayer < 140 && distToHome < 260) {
+        // Engaged: pursue player at walking speed
+        const speed = enemy.isVip ? 70 : 50;
+        this.physics.moveToObject(enemy, this.player, speed);
+      } else if (distToHome > 40) {
+        // Disengaged: return home to their designated zone waypoint
+        this.physics.moveTo(enemy, enemy.homeX, enemy.homeY, 40);
+      } else {
+        // Idling: gently pace around home waypoint
+        const patrolAngle = time * 0.0015 + enemy.homeX;
+        enemy.setVelocity(Math.cos(patrolAngle) * 15, Math.sin(patrolAngle) * 15);
       }
 
-      // Update floating label position
+      // Update nameplate position
       if (enemy.label && enemy.active) {
         enemy.label.setPosition(enemy.x, enemy.y - 24);
       }
+      if (enemy.vipLabel && enemy.active) {
+        enemy.vipLabel.setPosition(enemy.x, enemy.y - 38);
+      }
     });
+  }
+
+  private updateLocationHUD(): void {
+    const px = this.player.x;
+    const py = this.player.y;
+
+    let loc = '📍 Central Crossroads';
+    if (px < 850 && py < 580) {
+      loc = '📍 The Overgrown Inbox (Email Sector)';
+    } else if (px > 1080 && py < 580) {
+      loc = '📍 The Syntax Sanctum (Code Sector)';
+    } else if (py > 720) {
+      loc = '📍 The Treasury Vaults (Expense Sector)';
+    }
+
+    this.locationText.setText(loc);
   }
 
   private performSlash(): void {
     if (this.isSlashing) return;
     this.isSlashing = true;
-
-    // Synthesize procedural retro slash audio
     sound.playSlash();
 
     const offset = 28;
@@ -249,7 +385,6 @@ export class DungeonScene extends Phaser.Scene {
       this.slashHitbox.body.enable = true;
     }
 
-    // Hero lunge animation
     this.tweens.add({
       targets: this.player,
       scaleX: 1.25,
@@ -273,7 +408,7 @@ export class DungeonScene extends Phaser.Scene {
 
     const reducedMotion = useChoreStore.getState().reducedMotion;
     if (!reducedMotion) {
-      this.cameras.main.shake(300, 0.012);
+      this.cameras.main.shake(250, 0.01);
     }
 
     this.whirlwindSprite.setPosition(this.player.x, this.player.y);
@@ -285,17 +420,14 @@ export class DungeonScene extends Phaser.Scene {
       targets: this.whirlwindSprite,
       scale: 2.2,
       alpha: 0,
-      duration: 400,
+      duration: 380,
       onComplete: () => {
         this.whirlwindSprite.setVisible(false);
         this.isWhirlwinding = false;
       },
     });
 
-    // Particle burst outward
-    this.particles.emitParticleAt(this.player.x, this.player.y, 35);
-
-    // Trigger Super Whirlwind in store
+    this.particles.emitParticleAt(this.player.x, this.player.y, 30);
     useChoreStore.getState().slayAllBatchOptimistic();
   }
 
@@ -306,22 +438,21 @@ export class DungeonScene extends Phaser.Scene {
     const reducedMotion = useChoreStore.getState().reducedMotion;
 
     if (!reducedMotion) {
-      this.cameras.main.shake(130, 0.008);
+      this.cameras.main.shake(120, 0.007);
     }
 
     this.particles.emitParticleAt(enemy.x, enemy.y, 20);
 
     enemy.body.enable = false;
-    if (enemy.label) {
-      enemy.label.destroy();
-    }
+    if (enemy.label) enemy.label.destroy();
+    if (enemy.vipLabel) enemy.vipLabel.destroy();
 
     this.tweens.add({
       targets: enemy,
-      scaleX: 1.6,
+      scaleX: 1.5,
       scaleY: 0.1,
       alpha: 0,
-      duration: 160,
+      duration: 150,
       onComplete: () => {
         enemy.destroy();
       },
@@ -330,6 +461,12 @@ export class DungeonScene extends Phaser.Scene {
     useChoreStore.getState().initiateSlay(choreId);
   }
 
+  /**
+   * Spawns enemies strictly into their dedicated sectors:
+   * - Email & Boss in a Suit -> The Overgrown Inbox (NW)
+   * - Lint / Skeletons -> The Syntax Sanctum (NE)
+   * - Expenses / Trolls -> The Treasury Vault (South)
+   */
   private syncEnemiesWithStore(chores: ChoreItem[]): void {
     const existingIds = new Set(
       this.enemiesGroup.getChildren().map((c) => (c as EnemySprite).choreId)
@@ -341,49 +478,94 @@ export class DungeonScene extends Phaser.Scene {
       const chore = chores.find((c) => c.id === enemy.choreId);
       if (!chore || chore.status === 'SLATED_FOR_DEATH' || chore.status === 'COMPLETED' || chore.status === 'PENDING_UNDO') {
         if (enemy.label) enemy.label.destroy();
+        if (enemy.vipLabel) enemy.vipLabel.destroy();
         enemy.destroy();
       }
     });
 
-    // Spawn new chores
-    chores.forEach((chore, index) => {
+    // Sector Spawn Anchor Points
+    const emailAnchors = [
+      { x: 340, y: 260 },
+      { x: 520, y: 240 },
+      { x: 380, y: 400 },
+      { x: 560, y: 380 },
+    ];
+    const lintAnchors = [
+      { x: 1360, y: 260 },
+      { x: 1560, y: 240 },
+      { x: 1400, y: 400 },
+      { x: 1600, y: 380 },
+    ];
+    const expenseAnchors = [
+      { x: 800, y: 980 },
+      { x: 1120, y: 980 },
+      { x: 860, y: 1100 },
+      { x: 1060, y: 1100 },
+    ];
+
+    let emailIdx = 0;
+    let lintIdx = 0;
+    let expIdx = 0;
+
+    chores.forEach((chore) => {
       if (existingIds.has(chore.id) || chore.status !== 'ACTIVE') return;
 
-      const textureKey =
-        chore.enemyType === 'SPAM_SLIME'
-          ? 'enemy-slime'
-          : chore.enemyType === 'LINT_BANSHEE'
-          ? 'enemy-banshee'
-          : 'enemy-mimic';
+      let textureKey = 'enemy-goblin';
+      let spawnPoint = { x: 500, y: 300 };
 
-      const angle = (index / Math.max(1, chores.length)) * Math.PI * 2;
-      const radius = 135 + (index % 3) * 35;
-      const x = this.scale.width / 2 + Math.cos(angle) * radius;
-      const y = this.scale.height / 2 + Math.sin(angle) * radius;
-
-      const enemy = this.enemiesGroup.create(x, y, textureKey) as EnemySprite;
-      enemy.choreId = chore.id;
-      enemy.choreType = chore.type;
-      enemy.initialX = x;
-      enemy.initialY = y;
-      enemy.aiTimer = 0;
-      enemy.setCollideWorldBounds(true);
-      enemy.setBounce(0.4);
-
-      if (chore.isVip) {
-        enemy.setTint(0xfacc15); // Golden shield tint
+      if (chore.isVip || chore.enemyType === 'BOSS_EXEC') {
+        // The Boss: Stands directly in front of the Inbox Depot building
+        textureKey = 'enemy-boss-suit';
+        spawnPoint = { x: 440, y: 260 };
+      } else if (chore.type === 'EMAIL_TRASH' || chore.type === 'EMAIL_ARCHIVE') {
+        textureKey = 'enemy-goblin';
+        spawnPoint = emailAnchors[emailIdx % emailAnchors.length];
+        emailIdx++;
+      } else if (chore.type === 'LINT_FIX') {
+        textureKey = 'enemy-skeleton';
+        spawnPoint = lintAnchors[lintIdx % lintAnchors.length];
+        lintIdx++;
+      } else if (chore.type === 'EXPENSE_CATEGORIZE') {
+        textureKey = 'enemy-troll';
+        spawnPoint = expenseAnchors[expIdx % expenseAnchors.length];
+        expIdx++;
       }
 
+      const enemy = this.enemiesGroup.create(spawnPoint.x, spawnPoint.y, textureKey) as EnemySprite;
+      enemy.choreId = chore.id;
+      enemy.choreType = chore.type;
+      enemy.isVip = chore.isVip;
+      enemy.homeX = spawnPoint.x;
+      enemy.homeY = spawnPoint.y;
+      enemy.patrolRadius = 50;
+      enemy.aiTimer = 0;
+      enemy.setCollideWorldBounds(true);
+      enemy.setBounce(0.2);
+
+      // Nameplate
       const truncatedTitle = chore.title.length > 20 ? chore.title.slice(0, 18) + '..' : chore.title;
       enemy.label = this.add
-        .text(x, y - 24, truncatedTitle, {
+        .text(spawnPoint.x, spawnPoint.y - 24, truncatedTitle, {
           fontFamily: 'Inter, sans-serif',
           fontSize: '11px',
-          color: '#ffffff',
+          color: chore.isVip ? '#facc15' : '#ffffff',
           backgroundColor: '#090d16',
           padding: { x: 5, y: 2 },
         })
         .setOrigin(0.5);
+
+      if (chore.isVip) {
+        enemy.vipLabel = this.add
+          .text(spawnPoint.x, spawnPoint.y - 40, '👑 THE BOSS [VIP WARD]', {
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '10px',
+            fontStyle: 'bold',
+            color: '#000000',
+            backgroundColor: '#facc15',
+            padding: { x: 4, y: 2 },
+          })
+          .setOrigin(0.5);
+      }
     });
   }
 }
