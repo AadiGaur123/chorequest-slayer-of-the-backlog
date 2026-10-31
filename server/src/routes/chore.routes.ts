@@ -9,7 +9,12 @@ export function createChoreRouter(adapter: IChoreAdapter, queue: ChoreQueue): Ro
   // GET /api/chores - Fetches active chore monsters for the world
   router.get('/', async (_req: Request, res: Response) => {
     try {
-      const chores = await adapter.fetchPendingChores('default-user');
+      let chores = await adapter.fetchPendingChores('default-user');
+      // If all were cleared previously, auto-respawn so game is never empty on reload
+      if (chores.length === 0 && adapter.respawnChores) {
+        chores = await adapter.respawnChores('default-user');
+      }
+
       res.json({
         success: true,
         count: chores.length,
@@ -17,6 +22,21 @@ export function createChoreRouter(adapter: IChoreAdapter, queue: ChoreQueue): Ro
       });
     } catch (err) {
       console.error('[ChoreRouter] Error fetching chores:', err);
+      res.status(500).json({ success: false, error: (err as Error).message });
+    }
+  });
+
+  // POST /api/chores/respawn - Explicitly seeds fresh chore monsters into the dungeon
+  router.post('/respawn', async (_req: Request, res: Response) => {
+    try {
+      let chores;
+      if (adapter.respawnChores) {
+        chores = await adapter.respawnChores('default-user');
+      } else {
+        chores = await adapter.fetchPendingChores('default-user');
+      }
+      res.json({ success: true, count: chores.length, chores });
+    } catch (err) {
       res.status(500).json({ success: false, error: (err as Error).message });
     }
   });
@@ -29,7 +49,6 @@ export function createChoreRouter(adapter: IChoreAdapter, queue: ChoreQueue): Ro
     }
 
     try {
-      // Background worker handles execution with debounce/retry
       const result = await queue.enqueue('default-user', action);
       return res.json({ success: true, result });
     } catch (err) {

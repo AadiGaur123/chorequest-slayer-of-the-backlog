@@ -5,4 +5,5 @@ export interface IChoreAdapter {
   fetchPendingChores(userId: string): Promise<ChoreItem[]>;
   executeAction(userId: string, action: ActionPayload): Promise<ActionExecutionResult>;
   executeBatch(userId: string, actions: ActionPayload[]): Promise<ActionExecutionResult[]>;
+  respawnChores?(userId: string): Promise<ChoreItem[]>;
 }

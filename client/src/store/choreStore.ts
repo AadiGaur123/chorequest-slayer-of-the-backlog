@@ -25,6 +25,7 @@ interface ChoreStore {
   slayAllBatchOptimistic: () => Promise<void>;
   rollbackChore: (choreId: string, errorReason: string) => void;
   fetchChores: () => Promise<void>;
+  respawnChores: () => Promise<void>;
 }
 
 export const useChoreStore = create<ChoreStore>((set, get) => ({
@@ -75,12 +76,36 @@ export const useChoreStore = create<ChoreStore>((set, get) => ({
     }
   },
 
+  respawnChores: async () => {
+    set({ syncState: 'SYNCING', syncMessage: 'Respawning fresh chore horde...' });
+    sound.playXp();
+    try {
+      const res = await fetch('/api/chores/respawn', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.chores)) {
+        set((state) => ({
+          chores: data.chores,
+          syncState: 'SUCCESS',
+          syncMessage: `⚔️ Spawned ${data.chores.length} fresh chore fiends!`,
+          logs: [
+            `⚔️ [Respawn] A fresh horde of ${data.chores.length} digital chores has emerged!`,
+            ...state.logs.slice(0, 19),
+          ],
+        }));
+      }
+    } catch {
+      set({
+        syncState: 'ERROR',
+        syncMessage: 'Failed to respawn chores',
+      });
+    }
+  },
+
   slayChoreOptimistic: async (choreId: string) => {
     const { chores, playerStats, logs } = get();
     const target = chores.find((c) => c.id === choreId);
     if (!target || target.status === 'SLATED_FOR_DEATH') return;
 
-    // Play procedural hit sound
     sound.playHit();
 
     // 1. OPTIMISTIC UPDATE: Immediate 60fps game response (<16ms)
@@ -150,7 +175,6 @@ export const useChoreStore = create<ChoreStore>((set, get) => ({
 
     sound.playSuper();
 
-    // 1. Optimistically mark all active as dying
     const updatedChores = chores.map((c) =>
       c.status === 'ACTIVE' ? { ...c, status: 'SLATED_FOR_DEATH' as const } : c
     );

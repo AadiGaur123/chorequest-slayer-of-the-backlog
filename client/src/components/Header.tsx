@@ -11,7 +11,7 @@ export const Header: React.FC = () => {
     toggleReducedMotion,
     toggleSound,
     slayAllBatchOptimistic,
-    fetchChores,
+    respawnChores,
     chores,
   } = useChoreStore();
 
@@ -81,8 +81,8 @@ export const Header: React.FC = () => {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button
-          onClick={() => fetchChores()}
-          title="Respawn workspace chores"
+          onClick={() => respawnChores()}
+          title="Respawn fresh workspace chores"
           style={{
             background: 'var(--bg-panel)',
             color: 'var(--text-main)',

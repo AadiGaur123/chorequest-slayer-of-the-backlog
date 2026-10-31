@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useChoreStore } from '../store/choreStore.js';
-import { Terminal, CheckCircle2, Zap, Flame } from 'lucide-react';
+import { Terminal, CheckCircle2, Zap, Flame, RotateCcw } from 'lucide-react';
 
 export const TacticalConsole: React.FC = () => {
   const {
@@ -9,6 +9,7 @@ export const TacticalConsole: React.FC = () => {
     selectChore,
     slayChoreOptimistic,
     slayAllBatchOptimistic,
+    respawnChores,
     logs,
   } = useChoreStore();
 
@@ -33,12 +34,15 @@ export const TacticalConsole: React.FC = () => {
       } else if (e.key === 'Enter' && selectedChoreId) {
         e.preventDefault();
         slayChoreOptimistic(selectedChoreId);
+      } else if (e.key === 'r' && activeChores.length === 0) {
+        e.preventDefault();
+        respawnChores();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeChores, selectedChoreId, selectChore, slayChoreOptimistic]);
+  }, [activeChores, selectedChoreId, selectChore, slayChoreOptimistic, respawnChores]);
 
   return (
     <aside
@@ -140,16 +144,42 @@ export const TacticalConsole: React.FC = () => {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '32px 16px',
+              padding: '36px 16px',
               textAlign: 'center',
               color: 'var(--accent-green)',
+              backgroundColor: 'rgba(16, 185, 129, 0.05)',
+              borderRadius: '8px',
+              border: '1px dashed rgba(16, 185, 129, 0.3)',
             }}
           >
-            <CheckCircle2 size={36} />
-            <p style={{ marginTop: '12px', fontWeight: 600 }}>Zero Inbox & Clean Repo Achieved!</p>
-            <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-              All chores have been executed in the background. Click Respawn to seed again.
+            <CheckCircle2 size={40} color="var(--accent-green)" />
+            <p style={{ marginTop: '14px', fontWeight: 700, fontSize: '15px' }}>
+              Zero Inbox & Clean Repo Achieved!
             </p>
+            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '4px' }}>
+              All chores have been executed in the background.
+            </p>
+
+            <button
+              onClick={() => respawnChores()}
+              style={{
+                marginTop: '18px',
+                backgroundColor: 'var(--accent-gold)',
+                color: '#0f111a',
+                fontWeight: 700,
+                fontSize: '12px',
+                padding: '10px 18px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 0 15px rgba(244, 180, 26, 0.35)',
+                transition: 'transform 0.1s ease',
+              }}
+            >
+              <RotateCcw size={15} />
+              <span>Respawn Horde (Seed New Chores)</span>
+            </button>
           </div>
         ) : (
           activeChores.map((chore) => {
