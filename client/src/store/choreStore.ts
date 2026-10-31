@@ -32,11 +32,13 @@ interface ChoreStore {
   // Safety & Guardrail State
   undoPending: UndoPendingItem | null;
   vipConfirmationChore: ChoreItem | null;
+  inspectedChore: ChoreItem | null;
   auditLog: AuditLogEntry[];
 
   // Actions
   setChores: (chores: ChoreItem[]) => void;
   selectChore: (id: string | null) => void;
+  inspectChore: (id: string | null) => void;
   toggleHighContrast: () => void;
   toggleReducedMotion: () => void;
   toggleSound: () => void;
@@ -75,10 +77,26 @@ export const useChoreStore = create<ChoreStore>((set, get) => ({
   // Safety Defaults
   undoPending: null,
   vipConfirmationChore: null,
+  inspectedChore: null,
   auditLog: [],
 
   setChores: (chores) => set({ chores }),
   selectChore: (id) => set({ selectedChoreId: id }),
+  inspectChore: (id) => {
+    if (!id) {
+      set({ inspectedChore: null });
+      return;
+    }
+    const found = get().chores.find((c) => c.id === id);
+    if (found) {
+      sound.playXp();
+      set({
+        inspectedChore: found,
+        selectedChoreId: id,
+        logs: [`📜 [Inspect] Opened details for "${found.title}"`, ...get().logs.slice(0, 19)],
+      });
+    }
+  },
   toggleHighContrast: () => set((s) => ({ highContrast: !s.highContrast })),
   toggleReducedMotion: () => set((s) => ({ reducedMotion: !s.reducedMotion })),
   toggleSound: () => {

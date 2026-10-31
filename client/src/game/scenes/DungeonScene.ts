@@ -142,11 +142,26 @@ export class DungeonScene extends Phaser.Scene {
       };
     }
 
+    // Left-click ON an enemy sprite → open inspect popup (never instantly slay)
+    // Left-click on open world → sword slash
+    this.input.on('gameobjectdown', (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+      if (pointer.rightButtonDown()) return; // handled below
+      const enemy = obj as EnemySprite;
+      if (enemy.choreId) {
+        useChoreStore.getState().inspectChore(enemy.choreId);
+      }
+    });
+
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (pointer.rightButtonDown()) {
         this.performWhirlwind();
       } else {
-        this.performSlash();
+        // Only slash if the click was NOT on an enemy (gameobjectdown fires first)
+        const hitObjs = this.input.hitTestPointer(pointer);
+        const clickedEnemy = hitObjs.some((o) => (o as EnemySprite).choreId);
+        if (!clickedEnemy) {
+          this.performSlash();
+        }
       }
     });
 
@@ -546,6 +561,7 @@ export class DungeonScene extends Phaser.Scene {
       enemy.aiTimer = 0;
       enemy.setCollideWorldBounds(true);
       enemy.setBounce(0.2);
+      enemy.setInteractive({ useHandCursor: true }); // enables gameobjectdown for inspect
 
       // Nameplate
       const truncatedTitle = chore.title.length > 20 ? chore.title.slice(0, 18) + '..' : chore.title;

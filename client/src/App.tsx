@@ -4,6 +4,7 @@ import { GameContainer } from './game/GameContainer.js';
 import { TacticalConsole } from './components/TacticalConsole.js';
 import { SyncStatusToast } from './components/SyncStatusToast.js';
 import { SafetyOverlay } from './components/SafetyOverlay.js';
+import { ChoreInspectModal } from './components/ChoreInspectModal.js';
 import { useChoreStore } from './store/choreStore.js';
 
 export const App: React.FC = () => {
@@ -22,6 +23,7 @@ export const App: React.FC = () => {
       </main>
       <SyncStatusToast />
       <SafetyOverlay />
+      <ChoreInspectModal />
     </div>
   );
 };

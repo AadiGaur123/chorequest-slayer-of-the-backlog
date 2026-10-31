@@ -24,6 +24,7 @@ export interface ChoreItem {
   title: string;
   source: string;
   snippet: string;
+  body?: string; // Full message/email body or code snippet for inspection popup
   estimatedEffortSeconds: number;
   xpReward: number;
   status: 'ACTIVE' | 'PENDING_UNDO' | 'SLATED_FOR_DEATH' | 'COMPLETED' | 'FAILED';
